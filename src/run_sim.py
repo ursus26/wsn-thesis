@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-
 import os
 import subprocess
 import argparse
@@ -8,7 +6,7 @@ import matplotlib.pyplot as plt
 import sim
 
 # File paths.
-NS3_PATH = os.getcwd() + "/../ns3/ns-3.28"
+NS3_PATH = os.path.dirname(os.path.realpath(__file__)) + "/../ns3/ns-3.28"
 WAF_PATH = NS3_PATH + "/waf"
 
 # Scripts that are run in the simulation.
@@ -26,12 +24,17 @@ class Points:
         self.abs_path = ""
 
     def generate_points(self, nPoints=0, xmax=100, ymax=100):
-        coords = np.random.random((nPoints, 3)).astype(np.float32)
+        coords = np.random.random((nPoints + 1, 3)).astype(np.float32)
 
-        for i in np.arange(nPoints):
+        for i in np.arange(1, nPoints + 1):
             coords[i, 0] = coords[i, 0] * xmax
             coords[i, 1] = coords[i, 1] * ymax
             coords[i, 2] = 0
+
+        # Base station coordinate.
+        coords[0, 0] = xmax / 2.0
+        coords[0, 1] = ymax / 2.0
+        coords[0, 2] = 0.0
 
         self.point_list = coords
 

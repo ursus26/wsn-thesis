@@ -8,10 +8,12 @@
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
 #include "ns3/internet-module.h"
-#include "ns3/point-to-point-module.h"
 #include "ns3/applications-module.h"
 #include "ns3/wifi-module.h"
 #include "ns3/mobility-module.h"
+#include "ns3/olsr-helper.h"
+
+
 #include <stdio.h>
 #include <iostream>
 #include <fstream>
@@ -97,10 +99,13 @@ void read_points(Points* p, std::string file_name)
     f.close();
 }
 
-int
-main (int argc, char *argv[])
+int main (int argc, char *argv[])
 {
     /* Init commandline arguments. */
+    uint32_t packetSize = 1024; /* bytes */
+    double interval = 1.0;      /* seconds */
+    u_int32_t maxPackets = 2;
+    double simStopTime = 100.0; /* seconds */
     u_int32_t nNodes = 5;
     bool verbose = true;
     std::string file_path = "";
@@ -110,10 +115,14 @@ main (int argc, char *argv[])
     cmd.AddValue("nNodes", "Number of nodes in the network", nNodes);
     cmd.AddValue("verbose", "Outputs more info", verbose);
     cmd.AddValue("file", "File containing the node coords", file_path);
+    cmd.AddValue("stopTime", "Stop time of the simulator", simStopTime);
+    cmd.AddValue ("packetSize", "Size of the packet that is being sent. Unit: byte", packetSize);
+    cmd.AddValue ("maxPackets", "Maximum number of packets send per node", maxPackets);
+    cmd.AddValue ("interval", "Interval between sending packets. Unit: seconds", interval);
     cmd.Parse (argc, argv);
 
     /* Get the points. */
-    Points* p = createPoints(nNodes);
+    Points* p = createPoints(nNodes + 1);
     read_points(p, file_path);
 
     /* Set verbose */
@@ -137,42 +146,98 @@ main (int argc, char *argv[])
     wifiPhy.SetChannel(wifiChannel.Create());
 
     /* Setup the wifi MAC layer. */
+    Ssid ssid = Ssid ("ns-3-ssid");
     WifiHelper wifi;
     wifi.SetStandard (WIFI_PHY_STANDARD_80211a);
     WifiMacHelper mac;
-    mac.SetType("ns3::AdhocWifiMac");
+    mac.SetType("ns3::StaWifiMac",
+                "Ssid", SsidValue (ssid));
 
     NetDeviceContainer sensorDevices;
     sensorDevices = wifi.Install(wifiPhy, mac, sensorNodes);
+
+    /* Set the base station mac. */
+    mac.SetType("ns3::ApWifiMac",
+                "Ssid", SsidValue (ssid));
+    NetDeviceContainer bsDevices;
+    bsDevices = wifi.Install(wifiPhy, mac, baseStation);
 
     /* Put every sensor node into a line */
     MobilityHelper mobility;
     Ptr<ListPositionAllocator> initialAlloc = CreateObject<ListPositionAllocator>();
     for(uint32_t i = 0; i < sensorNodes.GetN(); ++i) {
-        initialAlloc->Add(Vector(p->points[i][0],
-                                 p->points[i][1],
-                                 p->points[i][2]));
+        initialAlloc->Add(Vector(p->points[i + 1][0],
+                                 p->points[i + 1][1],
+                                 p->points[i + 1][2]));
 
-        printf("Node %i, location: (%f, %f, %f)\n", i, p->points[i][0],
-               p->points[i][1], p->points[i][2]);
+        printf("Node %i, location: (%f, %f, %f)\n", i, p->points[i + 1][0],
+               p->points[i + 1][1], p->points[i + 1][2]);
     }
 
     mobility.SetPositionAllocator(initialAlloc);
     mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
-
     mobility.Install(sensorNodes);
+
+    /* Set the basestation location. */
+    Ptr<ListPositionAllocator> initialAlloc2 = CreateObject<ListPositionAllocator>();
+    initialAlloc2->Add(Vector(p->points[0][0],
+                              p->points[0][1],
+                              p->points[0][2]));
+    mobility.SetPositionAllocator(initialAlloc2);
+    mobility.Install(baseStation);
+
+    /* Enable OLSR */
+    OlsrHelper olsr;
+    Ipv4StaticRoutingHelper staticRouting;
+
+    Ipv4ListRoutingHelper list;
+    list.Add (staticRouting, 0);
+    list.Add (olsr, 10);
 
     /* Set the internet protocol? */
     InternetStackHelper stack;
+    stack.SetRoutingHelper(list);
     stack.Install(sensorNodes);
+    stack.Install(baseStation);
 
     /* Set the ip addresses of the nodes. */
     Ipv4AddressHelper address;
-    address.SetBase("10.1.3.0", "255.255.255.0");
-    address.Assign(sensorDevices);
+    address.SetBase("10.1.1.0", "255.255.255.0");
+    Ipv4InterfaceContainer bsInterfaces = address.Assign(bsDevices);
+    Ipv4InterfaceContainer snInterfaces = address.Assign(sensorDevices);
+
+    /* Create a container for the base station & sensor application. */
+    ApplicationContainer basestationApps;
+    ApplicationContainer sensorApps;
+
+    /* Setup the base station application. */
+    uint32_t port = 9;
+    UdpServerHelper udpServerHelper(port);
+    basestationApps.Add(udpServerHelper.Install(baseStation.Get(0)));
+
+    /* Install the sensor application. */
+    for(u_int32_t i = 0; i < nNodes; i++)
+    {
+        /* Setup the client application. */
+        UdpClientHelper udpClient(bsInterfaces.GetAddress(0), port);
+        udpClient.SetAttribute("MaxPackets", UintegerValue(maxPackets + 1));
+        udpClient.SetAttribute("Interval", TimeValue (Seconds (interval)));
+        udpClient.SetAttribute("PacketSize", UintegerValue(packetSize));
+
+        /* Add the application to the containers. */
+        sensorApps.Add(udpClient.Install(sensorNodes.Get(i)));
+    }
+
+    /* Start en set the stop time of the applications. */
+    basestationApps.Start(Seconds(0.));
+    basestationApps.Stop(Seconds(simStopTime));
+    sensorApps.Start(Seconds(0.));
+    sensorApps.Stop(Seconds(simStopTime));
+
+    Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
     /* Set a maximum life time of the simulator. */
-    Simulator::Stop(Seconds(30.0));
+    Simulator::Stop(Seconds(simStopTime));
 
     /* Run the simulation */
     Simulator::Run();
@@ -180,6 +245,10 @@ main (int argc, char *argv[])
 
     /* Clean up. */
     deletePoints(p);
+
+    /* Print results. */
+    printf("BS received packets: %lu\n", udpServerHelper.GetServer()->GetReceived());
+    printf("BS lost packets: %u\n", udpServerHelper.GetServer()->GetLost());
 
     return 0;
 }
