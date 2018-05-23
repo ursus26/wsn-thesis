@@ -10,10 +10,12 @@ NS3_PATH = os.path.dirname(os.path.realpath(__file__)) + "/../ns3/ns-3.28"
 WAF_PATH = NS3_PATH + "/waf"
 
 # Scripts that are run in the simulation.
-SCRIPTS = ['wsn_test']
+SCRIPTS = ['wsn_leach']
 
 # Command line arguments
 VERBOSE = False
+DEBUG = False
+PCAP = False
 NODES = 10
 
 
@@ -25,6 +27,7 @@ class Points:
 
     def generate_points(self, nPoints=0, xmax=100, ymax=100):
         coords = np.random.random((nPoints + 1, 3)).astype(np.float32)
+        # coords = np.random.randint(0, xmax, size=(nPoints + 1, 3))
 
         for i in np.arange(1, nPoints + 1):
             coords[i, 0] = coords[i, 0] * xmax
@@ -36,7 +39,7 @@ class Points:
         coords[0, 1] = ymax / 2.0
         coords[0, 2] = 0.0
 
-        self.point_list = coords
+        self.point_list = np.around(coords)
 
     def plot(self):
         plt.figure()
@@ -59,6 +62,8 @@ def parse_args():
     """
     global VERBOSE
     global NODES
+    global DEBUG
+    global PCAP
 
     # Init the argument parser.
     parser = argparse.ArgumentParser()
@@ -66,6 +71,8 @@ def parse_args():
     # Add commandline arguments.
     parser.add_argument("-v", "--verbose", help="increase output verbosity",
                         action="store_true")
+    parser.add_argument("-d", "--debug", help="Debug ns3 option", action="store_true")
+    parser.add_argument("-p", "--pcap", help="Enable pacture capture", action="store_true")
     parser.add_argument("-n", "--nNodes", help="Number of nodes")
 
     # Parse the arguments.
@@ -73,6 +80,8 @@ def parse_args():
 
     # Set or do something with the resulting arguments.
     VERBOSE = args.verbose
+    DEBUG = args.debug
+    PCAP = args.pcap
     if(args.nNodes):
         NODES = int(args.nNodes)
 
@@ -116,7 +125,8 @@ def run_scripts(points):
         print("Running " + script + " ...")
 
         # Run a single script
-        s = sim.Sim(WAF_PATH, NS3_PATH, script, VERBOSE, NODES)
+        s = sim.Sim(WAF_PATH, NS3_PATH, script, verbose=VERBOSE, nNodes=NODES,
+                    debug=DEBUG, pcap=PCAP)
         s.run(points)
 
         print("Finished running " + script)

@@ -1,0 +1,43 @@
+# -*- Mode: python; py-indent-offset: 4; indent-tabs-mode: nil; coding: utf-8; -*-
+
+# def options(opt):
+#     pass
+
+# def configure(conf):
+#     conf.check_nonfatal(header_name='stdint.h', define_name='HAVE_STDINT_H')
+
+def build(bld):
+    module = bld.create_ns3_module('leach', ['internet', 'wifi'])
+    module.source = [
+        'model/leach-dpd.cc',
+        'model/leach-id-cache.cc',
+        'model/leach-neighbor.cc',
+        'model/leach-packet.cc',
+        'model/leach-routing-protocol.cc',
+        'model/leach-rqueue.cc',
+        'model/leach-rtable.cc',
+        'helper/leach-helper.cc',
+        ]
+
+    module_test = bld.create_ns3_module_test_library('leach')
+    module_test.source = [
+        'test/leach-test-suite.cc',
+        ]
+
+    headers = bld(features='ns3header')
+    headers.module = 'leach'
+    headers.source = [
+        'model/leach-dpd.h',
+        'model/leach-id-cache.h',
+        'model/leach-neighbor.h',
+        'model/leach-packet.h',
+        'model/leach-routing-protocol.h',
+        'model/leach-rqueue.h',
+        'model/leach-rtable.h',
+        'helper/leach-helper.h',
+        ]
+
+    if bld.env.ENABLE_EXAMPLES:
+        bld.recurse('examples')
+
+    # bld.ns3_python_bindings()
