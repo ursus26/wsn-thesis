@@ -26,8 +26,6 @@ using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE ("wsn_leach");
 
-static int depletedNodes = 0;
-
 typedef struct Points {
     float** points;
     int nPoints;
@@ -104,32 +102,40 @@ void read_points(Points* p, std::string file_name)
     f.close();
 }
 
-void NodeEnergyDepletion()
+// void PhyRxDrop(Ptr<Packet> old, Ptr<Packet> new)
+// {
+//     NS_LOG_INFO("Packet dropped at Rx");
+// }
+
+static void RxDrop (Ptr<const Packet> p)
 {
-    depletedNodes += 1;
-
-    NS_LOG_INFO(Simulator::Now ().GetSeconds () << "\nNode energy depleted. depletedNodes = " <<
-                 depletedNodes);
-
-    std::cout << Simulator::Now ().GetSeconds () << depletedNodes << std::endl;
+    NS_LOG_UNCOND ("RxDrop at " << Simulator::Now ().GetSeconds ());
 }
 
-/// Trace function for remaining energy at node.
-void
-RemainingEnergy (double oldValue, double remainingEnergy)
+static void RxStart (Ptr<const Packet> p)
 {
-  // NS_LOG_UNCOND (Simulator::Now ().GetSeconds ()
-  //                << "s Current remaining energy = " << remainingEnergy << "J");
+    NS_LOG_UNCOND ("RxStart at " << Simulator::Now ().GetSeconds ());
 }
 
-/// Trace function for total energy consumption at node.
-void
-TotalEnergy (double oldValue, double totalEnergy)
+static void RxEnd (Ptr<const Packet> p)
 {
-  // NS_LOG_UNCOND (Simulator::Now ().GetSeconds ()
-  //                << "s Total energy consumed by radio = " << totalEnergy << "J");
+    NS_LOG_UNCOND ("RxEnd at " << Simulator::Now ().GetSeconds ());
 }
 
+static void TxDrop (Ptr<const Packet> p)
+{
+    NS_LOG_UNCOND ("TxDrop at " << Simulator::Now ().GetSeconds ());
+}
+
+static void TxStart (Ptr<const Packet> p)
+{
+    NS_LOG_UNCOND ("TxStart at " << Simulator::Now ().GetSeconds ());
+}
+
+static void TxEnd (Ptr<const Packet> p)
+{
+    NS_LOG_UNCOND ("TxEnd at " << Simulator::Now ().GetSeconds ());
+}
 
 int main (int argc, char *argv[])
 {
@@ -139,26 +145,25 @@ int main (int argc, char *argv[])
 
     /* Init commandline arguments. */
     uint32_t packetSize = 1024; /* bytes */
-    double interval = 1;      /* seconds */
-    u_int32_t maxPackets = 0;
-    double simStopTime = 200.0;  /* seconds */
-    u_int32_t nNodes = 5;
+    double interval = 5.0;      /* seconds */
+    u_int32_t maxPackets = 3;
+    double simStopTime = 50.0;  /* seconds */
+    u_int32_t nNodes = 1;
     bool verbose = true;
-    bool pcap = false;
-    double batteryValue = 25;   /* Joules */
     std::string file_path = "";
 
     /* Set comandline arguments and parse them. */
     CommandLine cmd;
     cmd.AddValue("nNodes", "Number of nodes in the network", nNodes);
     cmd.AddValue("verbose", "Outputs more info", verbose);
-    cmd.AddValue("pcap", "Capture packets", pcap);
     cmd.AddValue("file", "File containing the node coords", file_path);
     cmd.AddValue("stopTime", "Stop time of the simulator", simStopTime);
     cmd.AddValue ("packetSize", "Size of the packet that is being sent. Unit: byte", packetSize);
     cmd.AddValue ("maxPackets", "Maximum number of packets send per node", maxPackets);
     cmd.AddValue ("interval", "Interval between sending packets. Unit: seconds", interval);
     cmd.Parse (argc, argv);
+
+    nNodes = 1;
 
     /* Get the points. */
     Points* p = createPoints(nNodes + 1);
@@ -173,16 +178,13 @@ int main (int argc, char *argv[])
     {
         LogComponentEnable("UdpEchoClientApplication", LOG_LEVEL_INFO);
         LogComponentEnable("UdpEchoServerApplication", LOG_LEVEL_INFO);
+        LogComponentEnable("LeachRoutingProtocol", LOG_LEVEL_INFO);
         // LogComponentEnable("YansWifiChannel", LOG_LEVEL_INFO);
-
-        // LogComponentEnable("LeachRoutingProtocol", LOG_LEVEL_INFO);
-        // LogComponentEnable("wsn_leach", LOG_LEVEL_INFO);
-        // LogComponentEnable("WifiRadioEnergyModel", LOG_LEVEL_INFO);
-        // LogComponentEnable("LeachRoutingProtocolPacket", LOG_LEVEL_INFO);
-        // LogComponentEnable("AodvRoutingProtocol", LOG_LEVEL_FUNCTION);
-        // LogComponentEnable("OlsrRoutingProtocol", LOG_LEVEL_FUNCTION);
-        // LogComponentEnable("DsdvRoutingProtocol", LOG_LEVEL_FUNCTION);
+        LogComponentEnable("AodvRoutingProtocol", LOG_LEVEL_FUNCTION);
+        LogComponentEnable("OlsrRoutingProtocol", LOG_LEVEL_FUNCTION);
+        LogComponentEnable("DsdvRoutingProtocol", LOG_LEVEL_FUNCTION);
     }
+
 
     /**************************************************************************
      * Node creation
@@ -196,6 +198,7 @@ int main (int argc, char *argv[])
     NodeContainer sensorNodes;
     sensorNodes.Create(nNodes);
 
+
     /**************************************************************************
      * Physical layer
      *************************************************************************/
@@ -204,6 +207,8 @@ int main (int argc, char *argv[])
     YansWifiPhyHelper wifiPhy = YansWifiPhyHelper::Default();
     YansWifiChannelHelper wifiChannel = YansWifiChannelHelper::Default();
     wifiPhy.SetChannel(wifiChannel.Create());
+    // wifiPhy.TraceConnectWithoutContext("PhyRxDrop", MakeCallback(&PhyRxDrop));
+
 
     /**************************************************************************
      * MAC protocol & device creation
@@ -212,10 +217,7 @@ int main (int argc, char *argv[])
     /* Setup MAC layer */
     WifiMacHelper mac;
     Ssid ssid = Ssid ("ns-3-ssid");
-    // mac.SetType("ns3::StaWifiMac",
-    mac.SetType("ns3::AdhocWifiMac",
-                "Ssid", SsidValue (ssid));
-                // "ActiveProbing", BooleanValue (false));
+    mac.SetType("ns3::StaWifiMac", "Ssid", SsidValue (ssid));
 
     /* Set the wifi standard. */
     WifiHelper wifi;
@@ -226,10 +228,7 @@ int main (int argc, char *argv[])
     sensorDevices = wifi.Install(wifiPhy, mac, sensorNodes);
 
     /* Set the base station mac. */
-    // mac.SetType("ns3::ApWifiMac",
-    mac.SetType("ns3::AdhocWifiMac",
-                // "BeaconGeneration", BooleanValue (false),
-                // "BeaconInterval", TimeValue(Time(.1)), /* Werkt niet */
+    mac.SetType("ns3::ApWifiMac",
                 "Ssid", SsidValue (ssid));
 
     /* Create the base station device. */
@@ -245,9 +244,7 @@ int main (int argc, char *argv[])
     MobilityHelper mobility;
     Ptr<ListPositionAllocator> initialAlloc = CreateObject<ListPositionAllocator>();
     for(uint32_t i = 0; i < sensorNodes.GetN(); ++i) {
-        initialAlloc->Add(Vector(p->points[i + 1][0],
-                                 p->points[i + 1][1],
-                                 p->points[i + 1][2]));
+        initialAlloc->Add(Vector(10, 0, 0));
     }
     mobility.SetPositionAllocator(initialAlloc);
     mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
@@ -255,9 +252,7 @@ int main (int argc, char *argv[])
 
     /* Set the basestation location. */
     Ptr<ListPositionAllocator> initialAlloc2 = CreateObject<ListPositionAllocator>();
-    initialAlloc2->Add(Vector(p->points[0][0],
-                              p->points[0][1],
-                              p->points[0][2]));
+    initialAlloc2->Add(Vector(0, 0, 0));
     mobility.SetPositionAllocator(initialAlloc2);
     mobility.Install(baseStation);
 
@@ -268,22 +263,12 @@ int main (int argc, char *argv[])
 
     /* energy source */
     BasicEnergySourceHelper basicSourceHelper;
-    basicSourceHelper.Set ("BasicEnergySourceInitialEnergyJ", DoubleValue(batteryValue));
-    // EnergySourceContainer sources = basicSourceHelper.Install(sensorNodes);
+    basicSourceHelper.Set ("BasicEnergySourceInitialEnergyJ", DoubleValue(10));
+    EnergySourceContainer sources = basicSourceHelper.Install(sensorNodes);
 
-    EnergySourceContainer sources;
-    // BasicEnergySourceHelper basicSourceHelper;
-
-    for(u_int32_t i = 0; i < nNodes; i++)
-    {
-        sources.Add(basicSourceHelper.Install(sensorNodes.Get(i)));
-    }
-
-    // /* device energy model */
+    /* device energy model */
     WifiRadioEnergyModelHelper radioEnergyHelper;
-    radioEnergyHelper.SetDepletionCallback(MakeCallback(&NodeEnergyDepletion));
-    // radioEnergyHelper.Set ("TxCurrentA", DoubleValue (0.0174));
-    // radioEnergyHelper.Set ("RxCurrentA", DoubleValue (0.0197));
+    radioEnergyHelper.Set ("TxCurrentA", DoubleValue (0.0174));
     DeviceEnergyModelContainer deviceModels = radioEnergyHelper.Install (sensorDevices, sources);
 
 
@@ -304,7 +289,7 @@ int main (int argc, char *argv[])
     // list.Add(staticRouting, 0);
     // list.Add(olsr, 10);
     // list.Add(aodv, 5);
-    list.Add(leach, 100);
+    list.Add(leach, 20);
 
     /* Set the internet protocol */
     InternetStackHelper stack;
@@ -337,13 +322,8 @@ int main (int argc, char *argv[])
     {
         /* Setup the client application. */
         UdpClientHelper udpClient(bsInterfaces.GetAddress(0), port);
-
-        if(maxPackets > 0)
-        {
-            udpClient.SetAttribute("MaxPackets", UintegerValue(maxPackets));
-            std::cout << "Set maxPackets: " << maxPackets << std::endl;
-        }
-
+        // udpClient.SetAttribute("MaxPackets", UintegerValue(maxPackets));
+        udpClient.SetAttribute("MaxPackets", UintegerValue(maxPackets));
         udpClient.SetAttribute("Interval", TimeValue (Seconds (interval)));
         udpClient.SetAttribute("PacketSize", UintegerValue(packetSize));
 
@@ -364,24 +344,25 @@ int main (int argc, char *argv[])
      * Tracing
      *************************************************************************/
 
-    /* Enable packet capture. */
-    if(pcap)
+    wifiPhy.EnablePcapAll("leachPhy");
+
+    for(u_int32_t i = 0; i < nNodes; i++)
     {
-        std::cout << "Capture packets" << std::endl;
-        wifiPhy.EnablePcapAll("leachPhy");
+        sensorDevices.Get(i)->TraceConnectWithoutContext ("PhyRxDrop", MakeCallback (&RxDrop));
+        sensorDevices.Get(i)->TraceConnectWithoutContext ("PhyRxStart", MakeCallback (&RxStart));
+        sensorDevices.Get(i)->TraceConnectWithoutContext ("PhyRxEnd", MakeCallback (&RxEnd));
+
+        sensorDevices.Get(i)->TraceConnectWithoutContext ("PhyTxDrop", MakeCallback (&TxDrop));
+        sensorDevices.Get(i)->TraceConnectWithoutContext ("PhyTxStart", MakeCallback (&TxStart));
+        sensorDevices.Get(i)->TraceConnectWithoutContext ("PhyTxEnd", MakeCallback (&TxEnd));
     }
 
-    /* Energy tracing. */
-    Ptr<BasicEnergySource> basicSourcePtr = DynamicCast<BasicEnergySource> (sources.Get (0));
-    basicSourcePtr->TraceConnectWithoutContext ("RemainingEnergy", MakeCallback (&RemainingEnergy));
-
-    Ptr<DeviceEnergyModel> basicRadioModelPtr =
-        basicSourcePtr->FindDeviceEnergyModels ("ns3::WifiRadioEnergyModel").Get (0);
-    NS_ASSERT (basicRadioModelPtr != NULL);
-    basicRadioModelPtr->TraceConnectWithoutContext ("TotalEnergyConsumption", MakeCallback (&TotalEnergy));
-
-    /* Energy depletion callback. */
-    radioEnergyHelper.SetDepletionCallback(MakeCallback(&NodeEnergyDepletion));
+    bsDevices.Get(0)->TraceConnectWithoutContext ("PhyRxDrop", MakeCallback (&RxDrop));
+    bsDevices.Get(0)->TraceConnectWithoutContext ("PhyRxStart", MakeCallback (&RxStart));
+    bsDevices.Get(0)->TraceConnectWithoutContext ("PhyRxEnd", MakeCallback (&RxEnd));
+    bsDevices.Get(0)->TraceConnectWithoutContext ("PhyTxDrop", MakeCallback (&TxDrop));
+    bsDevices.Get(0)->TraceConnectWithoutContext ("PhyTxStart", MakeCallback (&TxStart));
+    bsDevices.Get(0)->TraceConnectWithoutContext ("PhyTxEnd", MakeCallback (&TxEnd));
 
 
     /**************************************************************************
@@ -421,7 +402,6 @@ int main (int argc, char *argv[])
     /* Print results. */
     printf("BS received packets: %lu\n", udpServerHelper.GetServer()->GetReceived());
     printf("BS lost packets: %u\n", udpServerHelper.GetServer()->GetLost());
-    std::cout << "Total Depleted nodes: " << depletedNodes << "/" << nNodes << std::endl;
 
     return 0;
 }

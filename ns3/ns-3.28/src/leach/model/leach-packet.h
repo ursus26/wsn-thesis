@@ -50,7 +50,8 @@ enum MessageType
   AODVTYPE_RREP_ACK = 4, //!< AODVTYPE_RREP_ACK
   LEACHTYPE_AD   = 5,
   LEACHTYPE_AD_REP = 6,
-  LEACHTYPE_MSG = 7
+  LEACHTYPE_TT = 7,
+  LEACHTYPE_MSG = 8
 };
 
 /**
@@ -726,6 +727,203 @@ private:
   uint32_t       m_x;    ///< Source Sequence Number
   uint32_t       m_y;    ///< Source Sequence Number
 };
+
+
+/**
+* \ingroup leach
+* \brief   Cluster head reply advertism
+  \verbatim
+  0                   1                   2                   3
+  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  |       Type    |            Reserved                           |
+  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  |                  Originator IP Address                        |
+  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  |                  Destination IP Address                       |
+  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  \endverbatim
+*/
+class AdRepHeader : public Header
+{
+public:
+
+   AdRepHeader(Ipv4Address origin = Ipv4Address (),
+               Ipv4Address destination = Ipv4Address());
+
+  /**
+   * \brief Get the type ID.
+   * \return the object TypeId
+   */
+  static TypeId GetTypeId ();
+  TypeId GetInstanceTypeId () const;
+  uint32_t GetSerializedSize () const;
+  void Serialize (Buffer::Iterator start) const;
+  uint32_t Deserialize (Buffer::Iterator start);
+  void Print (std::ostream &os) const;
+
+  /**
+   * \brief Set the origin address
+   * \param a the origin address
+   */
+  void SetOrigin (Ipv4Address a)
+  {
+    m_origin = a;
+  }
+  /**
+   * \brief Get the origin address
+   * \return the origin address
+   */
+  Ipv4Address GetOrigin () const
+  {
+    return m_origin;
+  }
+
+  /**
+   * \brief Set the origin address
+   * \param a the origin address
+   */
+  void SetDestination (Ipv4Address a)
+  {
+    m_destination = a;
+  }
+  /**
+   * \brief Get the origin address
+   * \return the origin address
+   */
+  Ipv4Address GetDestination() const
+  {
+    return m_destination;
+  }
+
+  /**
+   * \brief Comparison operator
+   * \param o AdRep header to compare
+   * \return true if the AdRep headers are equal
+   */
+  bool operator== (AdRepHeader const & o) const;
+private:
+  Ipv4Address    m_origin;         ///< Originator IP Address
+  Ipv4Address    m_destination;    ///< Originator IP Address
+};
+
+
+/**
+* \ingroup leach
+* \brief   Cluster head reply advertism
+  \verbatim
+  0                   1                   2                   3
+  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  |       Type    |            Reserved                           |
+  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  |                  Originator IP Address                        |
+  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  |                  Destination IP Address                       |
+  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  |                  Time slot                                    |
+  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  |                  Time duration                                |
+  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  \endverbatim
+*/
+class TimeTableHeader : public Header
+{
+public:
+
+   TimeTableHeader(Ipv4Address origin = Ipv4Address (),
+                   Ipv4Address destination = Ipv4Address(),
+                   Time slot = Time(),
+                   Time duration = Time());
+
+  /**
+   * \brief Get the type ID.
+   * \return the object TypeId
+   */
+  static TypeId GetTypeId ();
+  TypeId GetInstanceTypeId () const;
+  uint32_t GetSerializedSize () const;
+  void Serialize (Buffer::Iterator start) const;
+  uint32_t Deserialize (Buffer::Iterator start);
+  void Print (std::ostream &os) const;
+
+  /**
+   * \brief Set the origin address
+   * \param a the origin address
+   */
+  void SetOrigin (Ipv4Address a)
+  {
+    m_origin = a;
+  }
+  /**
+   * \brief Get the origin address
+   * \return the origin address
+   */
+  Ipv4Address GetOrigin () const
+  {
+    return m_origin;
+  }
+
+  /**
+   * \brief Set the origin address
+   * \param a the origin address
+   */
+  void SetDestination (Ipv4Address a)
+  {
+    m_destination = a;
+  }
+  /**
+   * \brief Get the origin address
+   * \return the origin address
+   */
+  Ipv4Address GetDestination() const
+  {
+    return m_destination;
+  }
+
+  /**
+   * \brief Set the time slot.
+   * \param a the time
+   */
+  void SetTimeSlot(Time a)
+  {
+    m_timeSlot = a;
+  }
+  /**
+   * \brief Get the origin address
+   * \return the origin address
+   */
+  Time GetTimeSlot() const
+  {
+    return m_timeSlot;
+  }
+
+  void SetTimeDuration(Time a)
+  {
+    m_duration = a;
+  }
+  /**
+   * \brief Get the origin address
+   * \return the origin address
+   */
+  Time GetTimeDuration() const
+  {
+    return m_duration;
+  }
+
+  /**
+   * \brief Comparison operator
+   * \param o AdRep header to compare
+   * \return true if the AdRep headers are equal
+   */
+  bool operator== (TimeTableHeader const & o) const;
+private:
+  Ipv4Address    m_origin;         ///< Originator IP Address
+  Ipv4Address    m_destination;    ///< Originator IP Address
+  Time           m_timeSlot;
+  Time           m_duration;
+};
+
 
 /**
 * \ingroup leach

@@ -26,7 +26,7 @@
  *          Pavel Boyko <boyko@iitp.ru>
  */
 #define NS_LOG_APPEND_CONTEXT                                   \
-  if (m_ipv4) { std::clog << "[node " << m_ipv4->GetObject<Node> ()->GetId () << "] "; }
+  if (m_ipv4) { std::clog << "[node " << m_ipv4->GetObject<Node> ()->GetId () << "] " << Simulator::Now().GetSeconds() << "s\t"; }
 
 #include "leach-routing-protocol.h"
 #include "ns3/log.h"
@@ -154,17 +154,25 @@ RoutingProtocol::RoutingProtocol ()
     m_seqNo (0),
     m_nb (Seconds(5)),
     m_lastBcastTime (Seconds (0)),
-    m_CHPercentage(0.2),
+    m_CHPercentage(0.05),
     m_isCluserHead(false),
     m_wasCH(false),
-    m_roundDuration(Time(5)),
-    m_roundTimer(Timer::CANCEL_ON_DESTROY),
-    m_setupDuration(Time(1)),
-    m_setupTimer(Timer::CANCEL_ON_DESTROY),
-    m_inSetupPhase(false),
-    m_curRound(1),
     m_nearestCH_addr(Ipv4Address()),
     m_nearestCH_dist(100000), /* Large enough so a new connection is always the CH.  */
+    m_sleepNode(Timer::CANCEL_ON_DESTROY),
+    m_roundDuration(Seconds(3)),
+    m_roundTimer(Timer::CANCEL_ON_DESTROY),
+    m_curRound(0),
+    m_inSetupPhase(false),
+    m_setupDuration(Time(.25)),
+    m_setupTimer(Timer::CANCEL_ON_DESTROY),
+    m_advertiseDuration(Seconds(.25)),
+    m_advertiseTimer(Timer::CANCEL_ON_DESTROY),
+    m_broadcastTimer(Timer::CANCEL_ON_DESTROY),
+    m_replyDuration(Seconds(1)),
+    m_replyTimer(Timer::CANCEL_ON_DESTROY),
+    m_sendTimer(Timer::CANCEL_ON_DESTROY),
+    m_openTimeFrame(false),
     m_x(0),
     m_y(0),
     m_myAddr(Ipv4Address()),
@@ -282,44 +290,154 @@ RoutingProtocol::RouteOutput (Ptr<Packet> p, const Ipv4Header &header,
 {
     NS_LOG_FUNCTION (this << header << (oif ? oif->GetIfIndex () : 0));
 
+
+    if(!m_isCluserHead)
+    {
+        return RouteOutputClusterNode(p, header, oif, sockerr);
+    }
+    else
+    {
+        return RouteOutputClusterHead(p, header, oif, sockerr);
+    }
+
+    // if(header.GetDestination() != Ipv4Address("10.1.1.1"))
+    // {
+    //     Ptr<Ipv4Route> route = Create<Ipv4Route> ();
+    //     route->SetDestination(header.GetDestination());
+    //     route->SetGateway(header.GetDestination());
+    //     route->SetSource(m_myAddr);
+    //     route->SetOutputDevice(m_ipv4->GetNetDevice(m_ipv4->GetInterfaceForAddress(m_myAddr)));
+    //
+    //     // NS_LOG_INFO("Route to: " << route->GetDestination() << " from: " << route->GetSource()
+    //     //             << " through: " << route->GetGateway() << " on interface: " <<
+    //     //             route->GetOutputDevice());
+    //
+    //     return route;
+    // }
+
     /* If this node is not the cluster head, then send data to the CH. */
-    if(!m_isCluserHead && m_nearestCH_addr != Ipv4Address())
+    // if(!m_isCluserHead && m_nearestCH_addr != Ipv4Address())
+    // {
+    //     /* Create route to base station through the cluster head. */
+    //     Ptr<Ipv4Route> route = Create<Ipv4Route> ();
+    //     route->SetDestination(header.GetDestination());
+    //     route->SetGateway(m_nearestCH_addr);
+    //     route->SetSource(m_myAddr);
+    //     route->SetOutputDevice(m_ipv4->GetNetDevice(m_ipv4->GetInterfaceForAddress(m_myAddr)));
+    //
+    //     NS_LOG_INFO("Route to: " << route->GetDestination() << " from: " << route->GetSource()
+    //                 << " through: " << route->GetGateway() << " on interface: " <<
+    //                 route->GetOutputDevice());
+    //
+    //     return route;
+    // }
+    /* If this node is the CH, then send directly to the sink. */
+    // else
+    // if(m_isCluserHead)
+    // {
+    //     /* Create direct route to base station. */
+    //     Ptr<Ipv4Route> route = Create<Ipv4Route> ();
+    //     route->SetDestination(header.GetDestination());
+    //     route->SetGateway(header.GetDestination());
+    //     route->SetSource(m_myAddr);
+    //     route->SetOutputDevice(m_ipv4->GetNetDevice(m_ipv4->GetInterfaceForAddress(m_myAddr)));
+    //
+    //     NS_LOG_INFO("Route to: " << route->GetDestination() << " from: " << route->GetSource()
+    //                 << " through: " << route->GetGateway() << " on interface: " <<
+    //                 route->GetOutputDevice());
+    //
+    //     return route;
+    // }
+    // else if(!m_inSetupPhase && !m_isCluserHead && m_nearestCH_addr == Ipv4Address())
+    // {
+    //     /* Create route to base station through the cluster head. */
+    //     Ptr<Ipv4Route> route = Create<Ipv4Route> ();
+    //     route->SetDestination(header.GetDestination());
+    //     route->SetGateway(header.GetDestination());
+    //     route->SetSource(m_myAddr);
+    //     route->SetOutputDevice(m_ipv4->GetNetDevice(m_ipv4->GetInterfaceForAddress(m_myAddr)));
+    //
+    //     NS_LOG_INFO("Route to: " << route->GetDestination() << " from: " << route->GetSource()
+    //                << " through: " << route->GetGateway() << " on interface: " <<
+    //                route->GetOutputDevice());
+    //
+    //     return route;
+    // }
+    //
+    // // Valid route not found, in this case we return loopback.
+    // // Actual route request will be deferred until packet will be fully formed,
+    // // routed to loopback, received from loopback and passed to RouteInput (see below)
+    //
+    // NS_LOG_INFO("No route available to: " << header.GetDestination() << ", so store the msg, m_nearestCH_addr " << m_nearestCH_addr);
+    //
+    // uint32_t iif = -2;
+    // DeferredRouteOutputTag tag (iif);
+    // if (!p->PeekPacketTag (tag))
+    // {
+    //     p->AddPacketTag (tag);
+    // }
+    //
+    // return LoopbackRoute (header, oif);
+}
+
+Ptr<Ipv4Route>
+RoutingProtocol::RouteOutputClusterNode (Ptr<Packet> p, const Ipv4Header &header,
+                                         Ptr<NetDevice> oif, Socket::SocketErrno &sockerr)
+{
+    /* Reply to cluster head. */
+    if(m_inSetupPhase && header.GetDestination() == m_nearestCH_addr)
     {
         /* Create route to base station through the cluster head. */
-        Ptr<Ipv4Route> route = Create<Ipv4Route> ();;
-        route->SetDestination(header.GetDestination());
-        route->SetGateway(m_nearestCH_addr);
-        route->SetSource(m_myAddr);
-        route->SetOutputDevice(m_ipv4->GetNetDevice(m_ipv4->GetInterfaceForAddress(m_myAddr)));
-
-        NS_LOG_INFO("Route to: " << route->GetDestination() << " from: " << route->GetSource()
-                    << " through: " << route->GetGateway() << " on interface: " <<
-                    route->GetOutputDevice());
-
-        return route;
-    }
-    /* If this node is the CH, then send directly to the sink. */
-    else if(m_isCluserHead || !m_inSetupPhase)
-    {
-        /* Create direct route to base station. */
-        Ptr<Ipv4Route> route = Create<Ipv4Route> ();;
+        Ptr<Ipv4Route> route = Create<Ipv4Route> ();
         route->SetDestination(header.GetDestination());
         route->SetGateway(header.GetDestination());
         route->SetSource(m_myAddr);
         route->SetOutputDevice(m_ipv4->GetNetDevice(m_ipv4->GetInterfaceForAddress(m_myAddr)));
 
-        NS_LOG_INFO("Route to: " << route->GetDestination() << " from: " << route->GetSource()
+        NS_LOG_INFO("Route reply to CH: " << route->GetDestination() << " from: " << route->GetSource()
                     << " through: " << route->GetGateway() << " on interface: " <<
                     route->GetOutputDevice());
 
         return route;
     }
 
-    // Valid route not found, in this case we return loopback.
-    // Actual route request will be deferred until packet will be fully formed,
-    // routed to loopback, received from loopback and passed to RouteInput (see below)
 
-    NS_LOG_INFO("No route available, so store the msg, m_nearestCH_addr " << m_nearestCH_addr);
+    /* Send message directly if there are no cluster heads found or reply to the
+     * cluster head. */
+    if(!m_inSetupPhase && m_nearestCH_addr == Ipv4Address())
+    {
+        /* Create route to base station through the cluster head. */
+        Ptr<Ipv4Route> route = Create<Ipv4Route> ();
+        route->SetDestination(header.GetDestination());
+        route->SetGateway(header.GetDestination());
+        route->SetSource(m_myAddr);
+        route->SetOutputDevice(m_ipv4->GetNetDevice(m_ipv4->GetInterfaceForAddress(m_myAddr)));
+
+        NS_LOG_INFO("1.Route to: " << route->GetDestination() << " from: " << route->GetSource()
+                    << " through: " << route->GetGateway() << " on interface: " <<
+                    route->GetOutputDevice());
+
+        return route;
+    }
+
+    else if(m_openTimeFrame && !m_inSetupPhase)
+    {
+        /* Create route to base station through the cluster head. */
+        Ptr<Ipv4Route> route = Create<Ipv4Route> ();
+        route->SetDestination(header.GetDestination());
+        route->SetGateway(m_nearestCH_addr);
+        route->SetSource(m_myAddr);
+        route->SetOutputDevice(m_ipv4->GetNetDevice(m_ipv4->GetInterfaceForAddress(m_myAddr)));
+
+        NS_LOG_INFO("2.Route to: " << route->GetDestination() << " from: " << route->GetSource()
+                    << " through: " << route->GetGateway() << " on interface: " <<
+                    route->GetOutputDevice());
+
+        return route;
+    }
+
+
+    NS_LOG_INFO("No route available to: " << header.GetDestination() << ", so store the msg, m_nearestCH_addr " << m_nearestCH_addr << " m_inSetupPhase: " << m_inSetupPhase);
 
     uint32_t iif = -2;
     DeferredRouteOutputTag tag (iif);
@@ -331,23 +449,43 @@ RoutingProtocol::RouteOutput (Ptr<Packet> p, const Ipv4Header &header,
     return LoopbackRoute (header, oif);
 }
 
+Ptr<Ipv4Route>
+RoutingProtocol::RouteOutputClusterHead (Ptr<Packet> p, const Ipv4Header &header,
+                                         Ptr<NetDevice> oif, Socket::SocketErrno &sockerr)
+{
+    /* Create direct route to the destination. */
+    Ptr<Ipv4Route> route = Create<Ipv4Route> ();
+    route->SetDestination(header.GetDestination());
+    route->SetGateway(header.GetDestination());
+    route->SetSource(m_myAddr);
+    route->SetOutputDevice(m_ipv4->GetNetDevice(m_ipv4->GetInterfaceForAddress(m_myAddr)));
+
+    NS_LOG_INFO("Route from CH to: " << route->GetDestination() << " from: " << route->GetSource()
+                << " through: " << route->GetGateway() << " on interface: " <<
+                route->GetOutputDevice());
+
+    return route;
+
+}
+
+
 void
 RoutingProtocol::DeferredRouteOutput (Ptr<const Packet> p, const Ipv4Header & header,
                                       UnicastForwardCallback ucb, ErrorCallback ecb)
 {
   NS_LOG_FUNCTION (this << p << header);
   NS_ASSERT (p != 0 && p != Ptr<Packet> ());
-  NS_LOG_INFO("JAJAJ DeferredRouteOutput");
+  // NS_LOG_INFO("JAJAJ DeferredRouteOutput");
 
   QueueEntry newEntry (p, header, ucb, ecb);
   bool result = m_queue.Enqueue (newEntry);
   if (result)
     {
-      NS_LOG_INFO ("Add packet " << p->GetUid () << " to queue. Protocol " << (uint16_t)
-                    header.GetProtocol ());
+      // NS_LOG_INFO ("Add packet " << p->GetUid () << " to queue. Protocol " << (uint16_t)
+      //               header.GetProtocol ());
 
       /* Set the queue timer. */
-      m_roundTimer.Schedule(m_queueTime);
+      // m_roundTimer.Schedule(m_queueTime);
 
       RoutingTableEntry rt;
       bool result = m_routingTable.LookupRoute (header.GetDestination (), rt);
@@ -365,10 +503,10 @@ RoutingProtocol::RouteInput (Ptr<const Packet> p, const Ipv4Header &header,
                              MulticastForwardCallback mcb, LocalDeliverCallback lcb, ErrorCallback ecb)
 {
     NS_LOG_FUNCTION (this << p->GetUid () << header.GetDestination () << idev->GetAddress ());
-    NS_LOG_INFO("Hello, routeinput!!!!!!!!!!!!!");
+    // NS_LOG_INFO("Hello, routeinput!!!!!!!!!!!!!");
 
-    NS_LOG_INFO("Output dev: " << m_ipv4->GetNetDevice(m_ipv4->GetInterfaceForAddress(m_myAddr)) <<
-                " idev: " << idev << " m_lo: " << m_lo);
+    // NS_LOG_INFO("Output dev: " << m_ipv4->GetNetDevice(m_ipv4->GetInterfaceForAddress(m_myAddr)) <<
+    //             " idev: " << idev << " m_lo: " << m_lo);
 
 
     if (m_socketAddresses.empty ())
@@ -391,11 +529,9 @@ RoutingProtocol::RouteInput (Ptr<const Packet> p, const Ipv4Header &header,
     /* Deferred route request */
     if (idev == m_lo)
     {
-        NS_LOG_INFO("Dan komen we hier");
         DeferredRouteOutputTag tag;
         if (p->PeekPacketTag (tag))
         {
-            NS_LOG_INFO("Komen we dan ook hier?");
             DeferredRouteOutput (p, header, ucb, ecb);
             return true;
         }
@@ -437,53 +573,6 @@ RoutingProtocol::Forwarding (Ptr<const Packet> p, const Ipv4Header & header,
 
   NS_LOG_DEBUG ("Drop packet " << p->GetUid () << " because node is not clulster head.");
   return false;
-
-
-  // if (m_routingTable.LookupRoute (dst, toDst))
-  //   {
-  //     if (toDst.GetFlag () == VALID)
-  //       {
-  //         Ptr<Ipv4Route> route = toDst.GetRoute ();
-  //         NS_LOG_LOGIC (route->GetSource () << " forwarding to " << dst << " from " << origin << " packet " << p->GetUid ());
-  //
-  //         /*
-  //          *  Each time a route is used to forward a data packet, its Active Route
-  //          *  Lifetime field of the source, destination and the next hop on the
-  //          *  path to the destination is updated to be no less than the current
-  //          *  time plus ActiveRouteTimeout.
-  //          */
-  //         UpdateRouteLifeTime (origin, m_activeRouteTimeout);
-  //         UpdateRouteLifeTime (dst, m_activeRouteTimeout);
-  //         UpdateRouteLifeTime (route->GetGateway (), m_activeRouteTimeout);
-  //         /*
-  //          *  Since the route between each originator and destination pair is expected to be symmetric, the
-  //          *  Active Route Lifetime for the previous hop, along the reverse path back to the IP source, is also updated
-  //          *  to be no less than the current time plus ActiveRouteTimeout
-  //          */
-  //         RoutingTableEntry toOrigin;
-  //         m_routingTable.LookupRoute (origin, toOrigin);
-  //         UpdateRouteLifeTime (toOrigin.GetNextHop (), m_activeRouteTimeout);
-  //
-  //         m_nb.Update (route->GetGateway (), m_activeRouteTimeout);
-  //         m_nb.Update (toOrigin.GetNextHop (), m_activeRouteTimeout);
-  //
-  //         ucb (route, p, header);
-  //         return true;
-  //       }
-  //     else
-  //       {
-  //         if (toDst.GetValidSeqNo ())
-  //           {
-  //             SendRerrWhenNoRouteToForward (dst, toDst.GetSeqNo (), origin);
-  //             NS_LOG_DEBUG ("Drop packet " << p->GetUid () << " because no route to forward it.");
-  //             return false;
-  //           }
-  //       }
-  //   }
-  // NS_LOG_LOGIC ("route not found to " << dst << ". Send RERR message.");
-  // NS_LOG_DEBUG ("Drop packet " << p->GetUid () << " because no route to forward it.");
-  // SendRerrWhenNoRouteToForward (dst, 0, origin);
-  // return false;
 }
 
 void
@@ -569,6 +658,7 @@ RoutingProtocol::NotifyInterfaceUp (uint32_t i)
       return;
     }
 
+  m_wifiDev = dev->GetObject<WifiNetDevice>();
   mac->TraceConnectWithoutContext ("TxErrHeader", m_nb.GetTxErrorCallback ());
 }
 
@@ -830,7 +920,7 @@ RoutingProtocol::RecvLeach (Ptr<Socket> socket)
     {
       NS_ASSERT_MSG (false, "Received a packet from an unknown socket");
     }
-  NS_LOG_DEBUG ("LEACH node " << this << " received a LEACH packet from " << sender << " to " << receiver);
+  NS_LOG_INFO("LEACH node " << this << " received a LEACH packet from " << sender << " to " << receiver);
 
   // UpdateRouteToNeighbor (sender, receiver);
   TypeHeader tHeader (AODVTYPE_RREQ);
@@ -865,6 +955,12 @@ RoutingProtocol::RecvLeach (Ptr<Socket> socket)
     }
     case LEACHTYPE_AD_REP:
     {
+        RecvAdReply(packet, sender);
+        break;
+    }
+    case LEACHTYPE_TT:
+    {
+        RecvTimeTable(packet, sender);
         break;
     }
     case LEACHTYPE_MSG:
@@ -952,9 +1048,60 @@ RoutingProtocol::SendAdvertism ()
         {
           destination = iface.GetBroadcast ();
         }
-      Time jitter = Time (MilliSeconds (m_uniformRandomVariable->GetInteger (0, 100)));
-      NS_LOG_INFO("Send Ads jitter: " << jitter);
-      Simulator::Schedule (jitter, &RoutingProtocol::SendTo, this, socket, packet, destination);
+
+
+      // Time jitter = Time (MilliSeconds (m_uniformRandomVariable->GetInteger (0,
+                            // m_advertiseDuration.GetMilliSeconds() - 25)));
+      // NS_LOG_INFO("Send Ads jitter: " << jitter);
+      // Simulator::Schedule (jitter, &RoutingProtocol::SendTo, this, socket, packet, destination);
+      // Simulator::ScheduleNow(&RoutingProtocol::SendTo, this, socket, packet, destination);
+      SendTo(socket, packet, destination);
+    }
+}
+
+void
+RoutingProtocol::RecvAdReply(Ptr<Packet> p, Ipv4Address sender)
+{
+    NS_LOG_FUNCTION(this << " sender: " << sender);
+
+    /* Get the header. */
+    AdRepHeader rep;
+    p->RemoveHeader(rep);
+
+    m_clusterNodes.push_back(sender);
+
+    NS_LOG_INFO("New cluster node: " << rep.GetOrigin());
+}
+
+void
+RoutingProtocol::SendAdRep ()
+{
+  NS_LOG_FUNCTION (this);
+  /* Unicast a reply with the AdRep message fields set as follows:
+   *   Origin IP Address              The node's IP address.
+   *   Destination IP Address         The CH's IP address.
+   */
+
+  for (std::map<Ptr<Socket>, Ipv4InterfaceAddress>::const_iterator j = m_socketAddresses.begin (); j != m_socketAddresses.end (); ++j)
+    {
+      Ptr<Socket> socket = j->first;
+      // Ipv4InterfaceAddress iface = j->second;
+
+      AdRepHeader rep(m_myAddr, m_nearestCH_addr);
+      Ptr<Packet> packet = Create<Packet>();
+      SocketIpTtlTag tag;
+      tag.SetTtl(1);
+      packet->AddPacketTag (tag);
+      packet->AddHeader(rep);
+      TypeHeader tHeader(LEACHTYPE_AD_REP);
+      packet->AddHeader(tHeader);
+
+      // Time jitter = Time (MilliSeconds (m_uniformRandomVariable->GetInteger (0, 100)));
+      Time jitter = Time (MilliSeconds (m_uniformRandomVariable->GetInteger (1,
+                          m_replyDuration.GetMilliSeconds() / 2)));
+      // NS_LOG_INFO("Send Ads jitter: " << jitter);
+      Simulator::Schedule (jitter, &RoutingProtocol::SendTo, this, socket, packet, m_nearestCH_addr);
+      // Simulator::ScheduleNow(&RoutingProtocol::SendTo, this, socket, packet, m_nearestCH_addr);
     }
 }
 
@@ -980,6 +1127,115 @@ RoutingProtocol::SendPacketFromQueue (Ipv4Address dst, Ptr<Ipv4Route> route)
       header.SetSource (route->GetSource ());
       header.SetTtl (header.GetTtl () + 1); // compensate extra TTL decrement by fake loopback routing
       ucb (route, p, header);
+    }
+}
+
+void RoutingProtocol::SendTimeTable()
+{
+    Time roundLeft = Time(MilliSeconds(m_roundDuration.GetMilliSeconds() -
+        m_advertiseDuration.GetMilliSeconds() - m_replyDuration.GetMilliSeconds()));
+
+    Time timeIncr = Time(MilliSeconds(roundLeft.GetMilliSeconds() / (m_clusterNodes.size() + 1)));
+
+    NS_LOG_INFO("Time to next slot: " << timeIncr.GetSeconds() << " Cluster size: " << m_clusterNodes.size());
+
+    int j = 1;
+    for (std::list<Ipv4Address>::const_iterator i = m_clusterNodes.begin();
+         i != m_clusterNodes.end(); i++)
+    {
+        /* Calculate the time slot. */
+        Time slot = Time(MilliSeconds(j * timeIncr.GetMilliSeconds() + Simulator::Now().GetMilliSeconds()));
+        NS_LOG_INFO(*i << " gets time slot: " <<  slot.GetSeconds());
+        j++;
+
+        for (std::map<Ptr<Socket>, Ipv4InterfaceAddress>::const_iterator j = m_socketAddresses.begin (); j != m_socketAddresses.end (); ++j)
+          {
+            Ptr<Socket> socket = j->first;
+
+            // NS_LOG_INFO("What? " << i->Get() << " " << Ipv4Address(i->Get()) << " " << *i);
+
+            TimeTableHeader tt(m_myAddr, *i, slot, timeIncr);
+            Ptr<Packet> packet = Create<Packet> ();
+            SocketIpTtlTag tag;
+            tag.SetTtl (1);
+            packet->AddPacketTag (tag);
+            packet->AddHeader(tt);
+            TypeHeader tHeader(LEACHTYPE_TT);
+            packet->AddHeader(tHeader);
+            // Send to all-hosts broadcast if on /32 addr, subnet-directed otherwise
+            // Ipv4Address destination;
+
+            Simulator::ScheduleNow(&RoutingProtocol::SendTo, this, socket, packet, *i);
+        }
+
+    }
+
+    /* We leave the setup phase and enter the steady state phase. */
+    m_inSetupPhase = false;
+}
+
+void RoutingProtocol::RecvTimeTable(Ptr<Packet> p, Ipv4Address origin)
+{
+    /* Get the header. */
+    TimeTableHeader tt;
+    p->RemoveHeader(tt);
+
+    Time delay = (tt.GetTimeSlot() - Simulator::Now());
+
+    if(!delay.IsPositive())
+    {
+        NS_LOG_INFO("Delay is not possitive.");
+        return;
+    }
+
+    NS_LOG_INFO("New time slot: " << tt.GetTimeSlot().GetSeconds() << " delay: " << delay.GetSeconds());
+
+    /* Set the timer and put the node to sleep. */
+    m_sendTimer.Cancel();
+    m_sendTimer.Schedule(delay);
+    m_sendTime = tt.GetTimeDuration();
+    sleep();
+
+    /* We leave the setup phase and enter the steady state phase. */
+    m_inSetupPhase = false;
+}
+
+void
+RoutingProtocol::SendFromQueue()
+{
+    NS_LOG_FUNCTION (this);
+
+    /* Wake the node up. */
+    resume();
+
+    Ipv4Address dst = Ipv4Address("10.1.1.1");
+
+    QueueEntry queueEntry;
+    while (m_queue.Dequeue (dst, queueEntry))
+    {
+        DeferredRouteOutputTag tag;
+        Ptr<Packet> p = ConstCast<Packet> (queueEntry.GetPacket ());
+
+        Ptr<Ipv4Route> route = Create<Ipv4Route> ();
+        route->SetDestination(dst);
+
+        if(m_isCluserHead || (!m_inSetupPhase && m_nearestCH_addr == Ipv4Address()))
+            route->SetGateway(dst);
+        else
+            route->SetGateway(m_nearestCH_addr);
+
+        route->SetSource(m_myAddr);
+        route->SetOutputDevice(m_ipv4->GetNetDevice(m_ipv4->GetInterfaceForAddress(m_myAddr)));
+
+        NS_LOG_INFO("Queued packet, route to: " << route->GetDestination() <<
+        " from: " << route->GetSource() << " through: " << route->GetGateway() <<
+        " on interface: " << route->GetOutputDevice());
+
+        UnicastForwardCallback ucb = queueEntry.GetUnicastForwardCallback ();
+        Ipv4Header header = queueEntry.GetIpv4Header ();
+        header.SetSource (route->GetSource ());
+        header.SetTtl (header.GetTtl () + 1); // compensate extra TTL decrement by fake loopback routing
+        ucb (route, p, header);
     }
 }
 
@@ -1023,14 +1279,19 @@ void
 RoutingProtocol::DoInitialize (void)
 {
   NS_LOG_FUNCTION (this);
-  uint32_t startTime;
 
   m_queueTimer.SetFunction(&RoutingProtocol::queueTimerExpired, this);
+  m_advertiseTimer.SetFunction(&RoutingProtocol::advertisePhaseExpired, this);
+  m_broadcastTimer.SetFunction(&RoutingProtocol::SendAdvertism, this);
+  m_replyTimer.SetFunction(&RoutingProtocol::replyPhaseExpired, this);
+  m_sleepNode.SetFunction(&RoutingProtocol::SendPacketFromQueue, this);
+  m_sendTimer.SetFunction(&RoutingProtocol::sendTimerExpired, this);
 
   /* Schedule a new round. */
   m_roundTimer.SetFunction(&RoutingProtocol::newRound, this);
-  startTime = m_uniformRandomVariable->GetInteger (0, 100);
-  m_roundTimer.Schedule(MilliSeconds(startTime));
+  // uint32_t startTime = m_uniformRandomVariable->GetInteger (0, 100);
+  // m_roundTimer.Schedule(MilliSeconds(startTime));
+  m_roundTimer.Schedule();
 
   /* Check if this node is the base station. */
   if(m_ipv4->GetObject<Node>()->GetId() == 0)
@@ -1062,9 +1323,72 @@ RoutingProtocol::DoInitialize (void)
 
 void RoutingProtocol::queueTimerExpired()
 {
-    NS_LOG_INFO("QUEUE TIMER EXPIRED");
+    NS_LOG_INFO(Simulator::Now ().GetSeconds () << " QUEUE TIMER EXPIRED");
 }
 
+void RoutingProtocol::advertisePhaseExpired()
+{
+    NS_LOG_FUNCTION(Simulator::Now ().GetSeconds ());
+    NS_LOG_INFO("ADVERTISE TIMER EXPIRED");
+
+    /* If we found a cluster head, then reply to it. */
+    if(!m_isCluserHead && m_nearestCH_addr != Ipv4Address())
+    {
+        SendAdRep();
+    }
+    /* Leave setup phase if there are not CH. */
+    else if(!m_isCluserHead && m_nearestCH_addr == Ipv4Address())
+    {
+        m_inSetupPhase = false;
+        SendFromQueue();
+    }
+
+    /* Schedule the next phase of LEACH. */
+    m_replyTimer.Cancel();
+    m_replyTimer.Schedule(m_replyDuration);
+}
+
+void RoutingProtocol::replyPhaseExpired()
+{
+    NS_LOG_FUNCTION(Simulator::Now().GetSeconds());
+    NS_LOG_INFO("REPLY TIMER EXPIRED");
+
+    /* Send the time table. */
+    if(m_isCluserHead)
+    {
+        SendTimeTable();
+        SendFromQueue();
+    }
+}
+
+void RoutingProtocol::sendTimerExpired()
+{
+    NS_LOG_FUNCTION(Simulator::Now().GetSeconds());
+    NS_LOG_INFO("SEND TIMER EXPIRED");
+
+    /* The time window for sending to the CH is open. */
+    if(!m_openTimeFrame && !m_inSetupPhase)
+    {
+        NS_LOG_INFO("OPEN TIME FRAME");
+        resume();
+
+        m_openTimeFrame = true;
+        SendFromQueue();
+
+        /* Schedule the event that our window is closing. */
+        m_sendTimer.Cancel();
+        m_sendTimer.Schedule(m_sendTime);
+    }
+    /* The time window is closing. */
+    else
+    {
+        NS_LOG_INFO("CLOSE TIME FRAME");
+        m_openTimeFrame = false;
+        sleep();
+    }
+
+
+}
 
 /**
  * Calculate a threshhold for every node.
@@ -1091,12 +1415,17 @@ void RoutingProtocol::runElection()
     NS_LOG_FUNCTION(this);
 
     double randNum = m_uniformRandomVariable->GetValue(0.0, 1.0);
-
     if(randNum < electionProbability())
     {
         NS_LOG_INFO("Node is elected");
         m_isCluserHead = true;
     }
+
+    // if(m_ipv4->GetObject<Node> ()->GetId () == 1)
+    // {
+    //     NS_LOG_INFO("Node is elected");
+    //     m_isCluserHead = true;
+    // }
 }
 
 /**
@@ -1106,11 +1435,19 @@ void RoutingProtocol::newRound()
 {
     NS_LOG_FUNCTION (this);
     m_curRound += 1;
+    NS_LOG_INFO("New round: " << m_curRound);
+    m_clusterNodes.clear();
+    m_inSetupPhase = true;
+    m_openTimeFrame = false;
 
     /* Stop early if base station because it doesn't need to check if it will
      * become a BS. */
     if(m_isBS)
         return;
+
+    /* Schedule the next round. */
+    m_roundTimer.Cancel();
+    m_roundTimer.Schedule(m_roundDuration);
 
     /* If this node was a CH in the previous round, then reset it. */
     if(m_isCluserHead)
@@ -1123,12 +1460,35 @@ void RoutingProtocol::newRound()
     if(fmod(m_curRound, 1 / m_CHPercentage) < m_curRound)
         m_wasCH = false;
 
+    m_nearestCH_addr = Ipv4Address();
+    m_nearestCH_dist = 1000000;
+
     /* Check if the node is elected as CH. */
     runElection();
 
     /* Advertise to surrounding nodes if CH. */
     if(m_isCluserHead)
+    {
+        // Time jitter = Time (MilliSeconds (m_uniformRandomVariable->GetInteger (0,
+                            // m_advertiseDuration.GetMilliSeconds() - 25)));
+        // NS_LOG_INFO("Send Ads jitter: " << jitter);
+        // m_broadcastTimer.Schedule(jitter);
         SendAdvertism();
+
+    }
+
+    m_advertiseTimer.Cancel();
+    m_advertiseTimer.Schedule(m_advertiseDuration);
+}
+
+void RoutingProtocol::sleep()
+{
+    m_wifiDev->GetPhy()->SetSleepMode();
+}
+
+void RoutingProtocol::resume()
+{
+    m_wifiDev->GetPhy()->ResumeFromSleep();
 }
 
 } //namespace leach

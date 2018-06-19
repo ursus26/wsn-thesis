@@ -13,7 +13,6 @@
 #include "ns3/mobility-module.h"
 #include "ns3/olsr-helper.h"
 
-
 #include <stdio.h>
 #include <iostream>
 #include <fstream>
@@ -226,6 +225,20 @@ int main (int argc, char *argv[])
 
         /* Add the application to the containers. */
         sensorApps.Add(udpClient.Install(sensorNodes.Get(i)));
+
+        /* TODO: Test energy model. */
+        // /* energy source */
+        // BasicEnergySourceHelper basicSourceHelper;
+        // // configure energy source
+        // basicSourceHelper.Set ("BasicEnergySourceInitialEnergyJ", DoubleValue (0.1));
+        // // install source
+        // EnergySourceContainer sources = basicSourceHelper.Install (c);
+        // /* device energy model */
+        // WifiRadioEnergyModelHelper radioEnergyHelper;
+        // // configure radio energy model
+        // radioEnergyHelper.Set ("TxCurrentA", DoubleValue (0.0174));
+        // // install device model
+        // DeviceEnergyModelContainer deviceModels = radioEnergyHelper.Install (devices, sources);
     }
 
     /* Start en set the stop time of the applications. */

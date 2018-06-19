@@ -36,11 +36,13 @@
 #include "ns3/node.h"
 #include "ns3/random-variable-stream.h"
 #include "ns3/output-stream-wrapper.h"
+#include "ns3/wifi-net-device.h"
 #include "ns3/ipv4-routing-protocol.h"
 #include "ns3/ipv4-interface.h"
 #include "ns3/ipv4-l3-protocol.h"
 #include "ns3/applications-module.h"
 #include "ns3/type-id.h"
+#include <list>
 #include <map>
 
 namespace ns3 {
@@ -220,14 +222,26 @@ private:
   /// Receive and process control packet
   void RecvAdvertism(Ptr<Packet> p, Ipv4Address receiver, Ipv4Address src);
 
+  void RecvAdReply(Ptr<Packet> p, Ipv4Address origin);
+
+  void RecvTimeTable(Ptr<Packet> p, Ipv4Address origin);
+
   ///\name Send
   //\{
   /// Forward packet from route request queue
   void SendPacketFromQueue (Ipv4Address dst, Ptr<Ipv4Route> route);
+
   /// Send hello
   // void SendHello ();
   /// Send cluster head advertism
   void SendAdvertism();
+
+  /* Send reply to cluster head. */
+  void SendAdRep();
+
+  void SendTimeTable();
+
+  void SendFromQueue();
 
   /**
    * Send packet to destination scoket
@@ -243,22 +257,45 @@ private:
   Time m_lastBcastTime;
 
 
-    /* LEACH variables */
-    double m_CHPercentage;
-    bool m_isCluserHead;
-    bool m_wasCH;
-    Time m_roundDuration;
-    Timer m_roundTimer;
-    Time m_setupDuration;
-    Timer m_setupTimer;
-    bool m_inSetupPhase;
-    u_int32_t m_curRound;
+    /**
+     * LEACH variables
+     */
+
+    /* Cluster head information */
+    double      m_CHPercentage;
+    bool        m_isCluserHead;
+    bool        m_wasCH;
     Ipv4Address m_nearestCH_addr;
-    double m_nearestCH_dist;
-    u_int32_t m_x;
-    u_int32_t m_y;
+    double      m_nearestCH_dist;
+    std::list<Ipv4Address> m_clusterNodes;
+
+    /* Cluster node information */
+    Timer m_sleepNode;
+
+    /* Round variables */
+    Time        m_roundDuration;
+    Timer       m_roundTimer;
+    u_int32_t   m_curRound;
+
+    /* Setup variables */
+    bool    m_inSetupPhase;
+    Time    m_setupDuration;    /* Might be useless */
+    Timer   m_setupTimer;       /* Might also be useless */
+    Time    m_advertiseDuration;
+    Timer   m_advertiseTimer;
+    Timer   m_broadcastTimer;
+    Time    m_replyDuration;
+    Timer   m_replyTimer;
+    Timer   m_sendTimer;
+    bool    m_openTimeFrame;
+    Time    m_sendTime;
+
+    /* Node information */
+    u_int32_t   m_x;
+    u_int32_t   m_y;
     Ipv4Address m_myAddr;
-    bool m_isBS;
+    bool        m_isBS;
+    Ptr<WifiNetDevice> m_wifiDev;
 
     /**
     * \brief Calculates the threshold.
@@ -269,6 +306,20 @@ private:
     void newRound();
     void setupTimerExpires();
     double DistTo(u_int32_t a_x, u_int32_t a_y);
+
+    void advertisePhaseExpired();
+    void replyPhaseExpired();
+    void sendTimerExpired();
+
+    /* Let the node sleep or wake up. */
+    void sleep();
+    void resume();
+
+    /* Route output */
+    Ptr<Ipv4Route> RouteOutputClusterHead(Ptr<Packet> p, const Ipv4Header &header,
+                                          Ptr<NetDevice> oif, Socket::SocketErrno &sockerr);
+    Ptr<Ipv4Route> RouteOutputClusterNode(Ptr<Packet> p, const Ipv4Header &header,
+                                          Ptr<NetDevice> oif, Socket::SocketErrno &sockerr);
 
 };
 

@@ -28,8 +28,12 @@
 #include "leach-packet.h"
 #include "ns3/address-utils.h"
 #include "ns3/packet.h"
+#include "ns3/log.h"
 
 namespace ns3 {
+
+NS_LOG_COMPONENT_DEFINE ("LeachRoutingProtocolPacket");
+
 namespace leach {
 
 NS_OBJECT_ENSURE_REGISTERED (TypeHeader);
@@ -83,6 +87,7 @@ TypeHeader::Deserialize (Buffer::Iterator start)
     case AODVTYPE_RREP_ACK:
     case LEACHTYPE_AD:
     case LEACHTYPE_AD_REP:
+    case LEACHTYPE_TT:
     case LEACHTYPE_MSG:
       {
         m_type = (MessageType) type;
@@ -709,7 +714,7 @@ AdHeader::GetTypeId ()
   static TypeId tid = TypeId ("ns3::leach::AdHeader")
     .SetParent<Header> ()
     .SetGroupName ("Leach")
-    .AddConstructor<RreqHeader> ()
+    .AddConstructor<AdHeader> ()
   ;
   return tid;
 }
@@ -774,6 +779,186 @@ operator<< (std::ostream & os, AdHeader const & h)
     h.Print (os);
     return os;
 }
+
+//-----------------------------------------------------------------------------
+// AdRepHeader
+//-----------------------------------------------------------------------------
+AdRepHeader::AdRepHeader (Ipv4Address origin, Ipv4Address destination)
+  : m_origin(origin),
+    m_destination(destination)
+{
+}
+
+NS_OBJECT_ENSURE_REGISTERED (AdRepHeader);
+
+TypeId
+AdRepHeader::GetTypeId ()
+{
+  static TypeId tid = TypeId ("ns3::leach::AdRepHeader")
+    .SetParent<Header> ()
+    .SetGroupName ("Leach")
+    .AddConstructor<AdRepHeader> ()
+  ;
+  return tid;
+}
+
+TypeId
+AdRepHeader::GetInstanceTypeId () const
+{
+  return GetTypeId ();
+}
+
+uint32_t
+AdRepHeader::GetSerializedSize () const
+{
+  return 11;
+}
+
+void
+AdRepHeader::Serialize (Buffer::Iterator i) const
+{
+  /* Write the reserved field. */
+  i.WriteU16((u_int16_t) 0);
+  i.WriteU8((u_int8_t) 0);
+
+  /* Write the origin and destination ipv4 addresses. */
+  WriteTo (i, m_origin);
+  WriteTo (i, m_destination);
+}
+
+uint32_t
+AdRepHeader::Deserialize (Buffer::Iterator start)
+{
+  Buffer::Iterator i = start;
+
+  /* Read the reserved field */
+  i.ReadU16();
+  i.ReadU8();
+
+  /* Read the origin and destination field */
+  ReadFrom (i, m_origin);
+  ReadFrom (i, m_destination);
+
+  uint32_t dist = i.GetDistanceFrom (start);
+  NS_ASSERT (dist == GetSerializedSize ());
+  return dist;
+}
+
+void
+AdRepHeader::Print (std::ostream &os) const
+{
+  os << " source: ipv4 " << m_origin << " CH ipv4: " << m_destination;
+}
+
+bool
+AdRepHeader::operator== (AdRepHeader const & o) const
+{
+  return (m_origin == o.m_origin && m_destination == o.m_destination);
+}
+
+
+std::ostream &
+operator<< (std::ostream & os, AdRepHeader const & h)
+{
+    h.Print (os);
+    return os;
+}
+
+//-----------------------------------------------------------------------------
+// TimeTableHeader
+//-----------------------------------------------------------------------------
+TimeTableHeader::TimeTableHeader(Ipv4Address origin, Ipv4Address destination,
+                                 Time slot, Time duration)
+  : m_origin(origin),
+    m_destination(destination),
+    m_timeSlot(slot),
+    m_duration(duration)
+{
+}
+
+NS_OBJECT_ENSURE_REGISTERED(TimeTableHeader);
+
+TypeId
+TimeTableHeader::GetTypeId ()
+{
+  static TypeId tid = TypeId ("ns3::leach::TimeTableHeader")
+    .SetParent<Header> ()
+    .SetGroupName ("Leach")
+    .AddConstructor<TimeTableHeader>()
+  ;
+  return tid;
+}
+
+TypeId
+TimeTableHeader::GetInstanceTypeId () const
+{
+  return GetTypeId ();
+}
+
+uint32_t
+TimeTableHeader::GetSerializedSize () const
+{
+  return 19;
+}
+
+void
+TimeTableHeader::Serialize (Buffer::Iterator i) const
+{
+  /* Write the reserved field. */
+  i.WriteU16((u_int16_t) 0);
+  i.WriteU8((u_int8_t) 0);
+
+  /* Write the origin and destination ipv4 addresses. */
+  WriteTo (i, m_origin);
+  WriteTo (i, m_destination);
+  i.WriteU32((u_int32_t) m_timeSlot.GetMilliSeconds());
+  i.WriteU32((u_int32_t) m_duration.GetMilliSeconds());
+
+  NS_LOG_INFO("Serialize: " << (u_int32_t) m_timeSlot.GetMilliSeconds());
+}
+
+uint32_t
+TimeTableHeader::Deserialize (Buffer::Iterator start)
+{
+  Buffer::Iterator i = start;
+
+  /* Read the reserved field */
+  i.ReadU16();
+  i.ReadU8();
+
+  /* Read the origin and destination field */
+  ReadFrom (i, m_origin);
+  ReadFrom (i, m_destination);
+  m_timeSlot = Time(MilliSeconds(i.ReadU32()));
+  m_duration = Time(MilliSeconds(i.ReadU32()));
+
+  uint32_t dist = i.GetDistanceFrom (start);
+  NS_ASSERT (dist == GetSerializedSize ());
+  return dist;
+}
+
+void
+TimeTableHeader::Print (std::ostream &os) const
+{
+  os << " source: ipv4 " << m_origin << " CH ipv4: " << m_destination <<
+        " timeSlot: " << m_timeSlot.GetSeconds() << " duration: " << m_duration;
+}
+
+bool
+TimeTableHeader::operator== (TimeTableHeader const & o) const
+{
+  return (m_origin == o.m_origin && m_destination == o.m_destination &&
+          m_timeSlot == o.m_timeSlot &&  m_duration == o.m_duration);
+}
+
+
+std::ostream &
+operator<< (std::ostream & os, TimeTableHeader const & h)
+{
+    h.Print (os);
+    return os;
+}
+
 
 //-----------------------------------------------------------------------------
 // MsgHeader

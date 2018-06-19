@@ -43,11 +43,13 @@ class Points:
 
     def plot(self):
         plt.figure()
-        plt.scatter(self.point_list[:, 0], self.point_list[:, 1])
+        plt.scatter(self.point_list[1:, 0], self.point_list[1:, 1], s=30, color="blue", zorder=3)
+        plt.scatter(self.point_list[:1, 0], self.point_list[:1, 1], s=30, color="red", zorder=3)
         plt.xlabel("x")
         plt.ylabel("y")
-        plt.legend(["Sensors"])
+        plt.legend(["Sensors", "Base station"], fontsize=14)
         plt.margins(x=0.1, y=0.1)
+        plt.grid(True)
         plt.show()
 
     def save(self, file_name="points.out"):
@@ -137,18 +139,18 @@ def run_scripts(points):
 def main():
     # # Parse the commandline arguments.
     parse_args()
-    #
+
     # # Generate data points.
     p = Points()
     p.generate_points(NODES)
     p.save()
-    # # p.plot()
-    #
-    # # Builds the scripts and checks if we could find the 'waf' file.
-    # # build_scripts()
-    #
-    # # Run all the scripts.
-    run_scripts(p)
+    p.plot()
+
+    # Builds the scripts and checks if we could find the 'waf' file.
+    # build_scripts()
+
+    # Run all the scripts.
+    # run_scripts(p)
 
 
 if __name__ == "__main__":
