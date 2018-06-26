@@ -6,7 +6,7 @@ import shlex
 
 class Sim:
     def __init__(self, waf_path, ns3_path, script_name, verbose=True, nNodes=10,
-                 debug=False, pcap=False):
+                 debug=False, pcap=False, energy=10):
         self.waf_path = waf_path
         self.ns3_path = ns3_path
         self.script_name = script_name
@@ -14,6 +14,7 @@ class Sim:
         self.debug = debug
         self.nNodes = nNodes
         self.pcap = pcap
+        self.energy = energy
 
     def run(self, data_points):
         if self.debug:
@@ -35,6 +36,10 @@ class Sim:
             if self.pcap:
                 script_args += " --pcap"
 
+            if self.energy:
+                script_args += " --energy=" + str(self.energy)
+
+            # Closing part
             script_args = script_args + "\""
 
             run_args = " --run " + self.script_name

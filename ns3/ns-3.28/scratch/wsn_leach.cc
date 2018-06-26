@@ -16,8 +16,13 @@
 #include "ns3/dsdv-helper.h"
 #include "ns3/leach-helper.h"
 #include "ns3/energy-module.h"
+#include "ns3/file-helper.h"
+#include "ns3/traced-value.h"
+#include "ns3/trace-source-accessor.h"
+#include "ns3/config.h"
+#include "ns3/gtk-config-store.h"
+#include "ns3/stats-module.h"
 
-#include <stdio.h>
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -26,12 +31,70 @@ using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE ("wsn_leach");
 
-static int depletedNodes = 0;
+
+class NodeEnergy : public Object
+{
+public:
+  /**
+   * Register this type.
+   * \return The TypeId.
+   */
+    static TypeId GetTypeId(void);
+    NodeEnergy();
+    void UpdateEnergy(double oldValue, double remainingEnergy);
+    double GetRemainingEnergy();
+private:
+    TracedValue<double> m_remainingEnergy;
+};
+
 
 typedef struct Points {
     float** points;
     int nPoints;
 } Points;
+
+/* Global objects. */
+EnergySourceContainer sources;
+static int depletedNodes = 0;
+static double batteryValue = 25;   /* Joules */
+Ptr<NodeEnergy>* pNodeEnergy;
+int nodeEnergySize;
+
+NS_OBJECT_ENSURE_REGISTERED(NodeEnergy);
+
+
+TypeId
+NodeEnergy::GetTypeId (void)
+{
+  static TypeId tid = TypeId ("ns3::NodeEnergy")
+    .SetParent<Object> ()
+    .SetGroupName ("wsn_leach")
+    .AddConstructor<NodeEnergy> ()
+    .AddTraceSource ("RemainingEnergy",
+                     "Remaining energy in battery",
+                     MakeTraceSourceAccessor (&NodeEnergy::m_remainingEnergy),
+                     "ns3::TracedValueCallback::Double")
+  ;
+  return tid;
+}
+
+NodeEnergy::NodeEnergy (void)
+{
+  NS_LOG_FUNCTION (this);
+  m_remainingEnergy = batteryValue;
+}
+
+void NodeEnergy::UpdateEnergy(double oldValue, double remainingEnergy)
+{
+    NS_LOG_FUNCTION(this);
+    m_remainingEnergy = remainingEnergy;
+    // NS_LOG_UNCOND(this << " UpdateEnergy remainingEnergy: " << remainingEnergy);
+}
+
+double NodeEnergy::GetRemainingEnergy()
+{
+    return m_remainingEnergy.Get();
+}
 
 
 Points * createPoints(int nPoints)
@@ -108,26 +171,35 @@ void NodeEnergyDepletion()
 {
     depletedNodes += 1;
 
-    NS_LOG_INFO(Simulator::Now ().GetSeconds () << "\nNode energy depleted. depletedNodes = " <<
-                 depletedNodes);
+    NS_LOG_INFO(Simulator::Now ().GetSeconds () << ", Node energy depleted. depletedNodes = " << depletedNodes);
 
-    std::cout << Simulator::Now ().GetSeconds () << depletedNodes << std::endl;
+    // std::cout << Simulator::Now ().GetSeconds () << ", Depleted nodes: " <<
+    //              depletedNodes << "/" << nodeEnergySize << std::endl;
 }
 
-/// Trace function for remaining energy at node.
-void
-RemainingEnergy (double oldValue, double remainingEnergy)
+/* Trace function for remaining energy at node. */
+void RemainingEnergy (double oldValue, double remainingEnergy)
 {
   // NS_LOG_UNCOND (Simulator::Now ().GetSeconds ()
   //                << "s Current remaining energy = " << remainingEnergy << "J");
+
+    for(int i = 0; i < nodeEnergySize; i++)
+    {
+        if(pNodeEnergy[i]->GetRemainingEnergy() == oldValue)
+        {
+            pNodeEnergy[i]->UpdateEnergy(oldValue, remainingEnergy);
+            return;
+        }
+    }
+
+    NS_LOG_UNCOND("Error, Couldn't find the correct NodeEnergy object.");
 }
 
-/// Trace function for total energy consumption at node.
-void
-TotalEnergy (double oldValue, double totalEnergy)
+/* Trace function for total energy consumption at node. */
+void TotalEnergy (double oldValue, double totalEnergy)
 {
   // NS_LOG_UNCOND (Simulator::Now ().GetSeconds ()
-  //                << "s Total energy consumed by radio = " << totalEnergy << "J");
+                 // << "s Total energy consumed by radio = " << totalEnergy << "J");
 }
 
 
@@ -137,15 +209,15 @@ int main (int argc, char *argv[])
      * Command line arguments
      *************************************************************************/
 
-    /* Init commandline arguments. */
+    /* Init commandline arguments, NOTE: some values are global because
+     * energy needs to be traced. */
     uint32_t packetSize = 1024; /* bytes */
-    double interval = 1;      /* seconds */
+    double interval = 1;        /* seconds */
     u_int32_t maxPackets = 0;
-    double simStopTime = 200.0;  /* seconds */
+    double simStopTime = 100.0; /* seconds */
     u_int32_t nNodes = 5;
     bool verbose = true;
     bool pcap = false;
-    double batteryValue = 25;   /* Joules */
     std::string file_path = "";
 
     /* Set comandline arguments and parse them. */
@@ -155,14 +227,21 @@ int main (int argc, char *argv[])
     cmd.AddValue("pcap", "Capture packets", pcap);
     cmd.AddValue("file", "File containing the node coords", file_path);
     cmd.AddValue("stopTime", "Stop time of the simulator", simStopTime);
-    cmd.AddValue ("packetSize", "Size of the packet that is being sent. Unit: byte", packetSize);
-    cmd.AddValue ("maxPackets", "Maximum number of packets send per node", maxPackets);
-    cmd.AddValue ("interval", "Interval between sending packets. Unit: seconds", interval);
+    cmd.AddValue("packetSize", "Size of the packet that is being sent. Unit: byte", packetSize);
+    cmd.AddValue("maxPackets", "Maximum number of packets send per node", maxPackets);
+    cmd.AddValue("interval", "Interval between sending packets. Unit: seconds", interval);
+    cmd.AddValue("energy", "Energy available to a node", batteryValue);
     cmd.Parse (argc, argv);
 
     /* Get the points. */
     Points* p = createPoints(nNodes + 1);
     read_points(p, file_path);
+
+    /* Create objects for tracing the amount of energy in nodes. */
+    nodeEnergySize = nNodes;
+    pNodeEnergy = new Ptr<NodeEnergy>[nodeEnergySize];
+    for(int i = 0; i < nodeEnergySize; i++)
+        pNodeEnergy[i] = CreateObject<NodeEnergy>();
 
 
     /**************************************************************************
@@ -171,17 +250,8 @@ int main (int argc, char *argv[])
 
     if(verbose)
     {
-        LogComponentEnable("UdpEchoClientApplication", LOG_LEVEL_INFO);
-        LogComponentEnable("UdpEchoServerApplication", LOG_LEVEL_INFO);
-        // LogComponentEnable("YansWifiChannel", LOG_LEVEL_INFO);
-
         // LogComponentEnable("LeachRoutingProtocol", LOG_LEVEL_INFO);
-        // LogComponentEnable("wsn_leach", LOG_LEVEL_INFO);
-        // LogComponentEnable("WifiRadioEnergyModel", LOG_LEVEL_INFO);
-        // LogComponentEnable("LeachRoutingProtocolPacket", LOG_LEVEL_INFO);
-        // LogComponentEnable("AodvRoutingProtocol", LOG_LEVEL_FUNCTION);
-        // LogComponentEnable("OlsrRoutingProtocol", LOG_LEVEL_FUNCTION);
-        // LogComponentEnable("DsdvRoutingProtocol", LOG_LEVEL_FUNCTION);
+        LogComponentEnable("wsn_leach", LOG_LEVEL_INFO);
     }
 
     /**************************************************************************
@@ -212,10 +282,8 @@ int main (int argc, char *argv[])
     /* Setup MAC layer */
     WifiMacHelper mac;
     Ssid ssid = Ssid ("ns-3-ssid");
-    // mac.SetType("ns3::StaWifiMac",
     mac.SetType("ns3::AdhocWifiMac",
                 "Ssid", SsidValue (ssid));
-                // "ActiveProbing", BooleanValue (false));
 
     /* Set the wifi standard. */
     WifiHelper wifi;
@@ -226,10 +294,7 @@ int main (int argc, char *argv[])
     sensorDevices = wifi.Install(wifiPhy, mac, sensorNodes);
 
     /* Set the base station mac. */
-    // mac.SetType("ns3::ApWifiMac",
     mac.SetType("ns3::AdhocWifiMac",
-                // "BeaconGeneration", BooleanValue (false),
-                // "BeaconInterval", TimeValue(Time(.1)), /* Werkt niet */
                 "Ssid", SsidValue (ssid));
 
     /* Create the base station device. */
@@ -269,21 +334,13 @@ int main (int argc, char *argv[])
     /* energy source */
     BasicEnergySourceHelper basicSourceHelper;
     basicSourceHelper.Set ("BasicEnergySourceInitialEnergyJ", DoubleValue(batteryValue));
-    // EnergySourceContainer sources = basicSourceHelper.Install(sensorNodes);
-
-    EnergySourceContainer sources;
-    // BasicEnergySourceHelper basicSourceHelper;
 
     for(u_int32_t i = 0; i < nNodes; i++)
-    {
         sources.Add(basicSourceHelper.Install(sensorNodes.Get(i)));
-    }
 
-    // /* device energy model */
+    /* device energy model */
     WifiRadioEnergyModelHelper radioEnergyHelper;
     radioEnergyHelper.SetDepletionCallback(MakeCallback(&NodeEnergyDepletion));
-    // radioEnergyHelper.Set ("TxCurrentA", DoubleValue (0.0174));
-    // radioEnergyHelper.Set ("RxCurrentA", DoubleValue (0.0197));
     DeviceEnergyModelContainer deviceModels = radioEnergyHelper.Install (sensorDevices, sources);
 
 
@@ -291,19 +348,10 @@ int main (int argc, char *argv[])
      * Network protocol and IP assignment
      *************************************************************************/
 
-    /* TODO Cleanup */
-    OlsrHelper olsr;
-    AodvHelper aodv;
-    Ipv4StaticRoutingHelper staticRouting;
-
     /* Enable LEACH */
     LeachHelper leach;
 
     Ipv4ListRoutingHelper list;
-    /* TODO cleanup */
-    // list.Add(staticRouting, 0);
-    // list.Add(olsr, 10);
-    // list.Add(aodv, 5);
     list.Add(leach, 100);
 
     /* Set the internet protocol */
@@ -341,7 +389,7 @@ int main (int argc, char *argv[])
         if(maxPackets > 0)
         {
             udpClient.SetAttribute("MaxPackets", UintegerValue(maxPackets));
-            std::cout << "Set maxPackets: " << maxPackets << std::endl;
+            NS_LOG_INFO("Set maxPackets: " << maxPackets);
         }
 
         udpClient.SetAttribute("Interval", TimeValue (Seconds (interval)));
@@ -372,17 +420,58 @@ int main (int argc, char *argv[])
     }
 
     /* Energy tracing. */
-    Ptr<BasicEnergySource> basicSourcePtr = DynamicCast<BasicEnergySource> (sources.Get (0));
-    basicSourcePtr->TraceConnectWithoutContext ("RemainingEnergy", MakeCallback (&RemainingEnergy));
+    int sourceID = 0;
+    for (EnergySourceContainer::Iterator iter = sources.Begin();
+         iter != sources.End(); iter++)
+    {
+        /* Trace the remaining energy and store it in our object. */
+        Ptr<BasicEnergySource> basicSourcePtr = DynamicCast<BasicEnergySource>(*iter);
+        basicSourcePtr->TraceConnectWithoutContext("RemainingEnergy",
+                                                   MakeCallback(&RemainingEnergy));
 
-    Ptr<DeviceEnergyModel> basicRadioModelPtr =
-        basicSourcePtr->FindDeviceEnergyModels ("ns3::WifiRadioEnergyModel").Get (0);
-    NS_ASSERT (basicRadioModelPtr != NULL);
-    basicRadioModelPtr->TraceConnectWithoutContext ("TotalEnergyConsumption", MakeCallback (&TotalEnergy));
+        /* Create a config path for the trace source. */
+        std::string path = "/Names/NodeEnergy";
+        std::string id = std::to_string(sourceID);
+        path += id;
 
-    /* Energy depletion callback. */
-    radioEnergyHelper.SetDepletionCallback(MakeCallback(&NodeEnergyDepletion));
+        /* Add the trace source to the config tree. */
+        Names::Add (path, pNodeEnergy[sourceID]);
+        // Names::Add(path, std::to_string(sourceID), pNodeEnergy[sourceID]);
 
+        sourceID++;
+    }
+
+    /**************************************************************************
+     * Data collection
+     *************************************************************************/
+
+     /* The filehelpers need to be initialized outside the for loop. I don't
+      * know why. */
+     FileHelper *fileHelpers = new FileHelper[sourceID + 1];
+
+     sourceID = 0;
+     for (EnergySourceContainer::Iterator iter = sources.Begin();
+          iter != sources.End(); iter++)
+     {
+         /* Create a path to the trace source. */
+         std::string id = std::to_string(sourceID);
+         std::string path = "/Names/NodeEnergy";
+         path += id;
+         std::string tracePath = path + "/RemainingEnergy";
+
+         /* Set the output file. */
+         fileHelpers[sourceID].ConfigureFile("wsn_leach_energy_remaining" + id,
+                                   FileAggregator::COMMA_SEPARATED);
+
+         fileHelpers[sourceID].Set2dFormat("Time (Seconds) = %.4f\tEnergy Remaining (Joule) = %.4f");
+
+         /* Multiple files. */
+         fileHelpers[sourceID].WriteProbe("ns3::DoubleProbe",
+                               tracePath,
+                               "Output");
+
+         sourceID++;
+     }
 
     /**************************************************************************
      * Simulation
@@ -416,7 +505,6 @@ int main (int argc, char *argv[])
 
     /* Clean up. */
     deletePoints(p);
-
 
     /* Print results. */
     printf("BS received packets: %lu\n", udpServerHelper.GetServer()->GetReceived());

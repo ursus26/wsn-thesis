@@ -17,6 +17,7 @@ VERBOSE = False
 DEBUG = False
 PCAP = False
 NODES = 10
+ENERGY = 10
 
 
 class Points:
@@ -66,6 +67,7 @@ def parse_args():
     global NODES
     global DEBUG
     global PCAP
+    global ENERGY
 
     # Init the argument parser.
     parser = argparse.ArgumentParser()
@@ -76,6 +78,7 @@ def parse_args():
     parser.add_argument("-d", "--debug", help="Debug ns3 option", action="store_true")
     parser.add_argument("-p", "--pcap", help="Enable pacture capture", action="store_true")
     parser.add_argument("-n", "--nNodes", help="Number of nodes")
+    parser.add_argument("-e", "--energy", help="Available energy in the battery of a node.")
 
     # Parse the arguments.
     args = parser.parse_args()
@@ -84,8 +87,11 @@ def parse_args():
     VERBOSE = args.verbose
     DEBUG = args.debug
     PCAP = args.pcap
-    if(args.nNodes):
+    if args.nNodes:
         NODES = int(args.nNodes)
+
+    if args.energy:
+        ENERGY = float(args.energy)
 
 
 def build_scripts():
@@ -128,7 +134,7 @@ def run_scripts(points):
 
         # Run a single script
         s = sim.Sim(WAF_PATH, NS3_PATH, script, verbose=VERBOSE, nNodes=NODES,
-                    debug=DEBUG, pcap=PCAP)
+                    debug=DEBUG, pcap=PCAP, energy=ENERGY)
         s.run(points)
 
         print("Finished running " + script)
@@ -144,13 +150,13 @@ def main():
     p = Points()
     p.generate_points(NODES)
     p.save()
-    p.plot()
+    # p.plot()
 
     # Builds the scripts and checks if we could find the 'waf' file.
     # build_scripts()
 
     # Run all the scripts.
-    # run_scripts(p)
+    run_scripts(p)
 
 
 if __name__ == "__main__":
