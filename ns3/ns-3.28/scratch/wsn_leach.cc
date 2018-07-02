@@ -11,16 +11,12 @@
 #include "ns3/applications-module.h"
 #include "ns3/wifi-module.h"
 #include "ns3/mobility-module.h"
-#include "ns3/olsr-helper.h"
-#include "ns3/aodv-helper.h"
-#include "ns3/dsdv-helper.h"
 #include "ns3/leach-helper.h"
 #include "ns3/energy-module.h"
 #include "ns3/file-helper.h"
 #include "ns3/traced-value.h"
 #include "ns3/trace-source-accessor.h"
 #include "ns3/config.h"
-#include "ns3/gtk-config-store.h"
 #include "ns3/stats-module.h"
 
 #include <iostream>
@@ -88,14 +84,12 @@ void NodeEnergy::UpdateEnergy(double oldValue, double remainingEnergy)
 {
     NS_LOG_FUNCTION(this);
     m_remainingEnergy = remainingEnergy;
-    // NS_LOG_UNCOND(this << " UpdateEnergy remainingEnergy: " << remainingEnergy);
 }
 
 double NodeEnergy::GetRemainingEnergy()
 {
     return m_remainingEnergy.Get();
 }
-
 
 Points * createPoints(int nPoints)
 {
@@ -172,17 +166,11 @@ void NodeEnergyDepletion()
     depletedNodes += 1;
 
     NS_LOG_INFO(Simulator::Now ().GetSeconds () << ", Node energy depleted. depletedNodes = " << depletedNodes);
-
-    // std::cout << Simulator::Now ().GetSeconds () << ", Depleted nodes: " <<
-    //              depletedNodes << "/" << nodeEnergySize << std::endl;
 }
 
 /* Trace function for remaining energy at node. */
 void RemainingEnergy (double oldValue, double remainingEnergy)
 {
-  // NS_LOG_UNCOND (Simulator::Now ().GetSeconds ()
-  //                << "s Current remaining energy = " << remainingEnergy << "J");
-
     for(int i = 0; i < nodeEnergySize; i++)
     {
         if(pNodeEnergy[i]->GetRemainingEnergy() == oldValue)
